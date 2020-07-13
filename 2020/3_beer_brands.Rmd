@@ -1,0 +1,421 @@
+---
+title: "Retail Analytics"
+subtitle: Individual Coursework
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+### 01789808
+
+## Table of Contents
+* Introduction
+* Dataset Variables
+* Exploratory Data Analysis
+* SCANPRO
+* SCANPRO: Analysis
+* SCANPRO: Implication
+* Multiple Linear Regression
+* Neural Network
+* Neural Network: Analysis
+* Neural Network: Implications
+* Conclusion
+* References
+
+## Introduction
+
+The following report will show how to apply the SCANPRO method and show two forecasting methods with a dataset from the Chicago’s Dominick’s website. The dataset consists of sales, branding, and prices of three different brands of beer over a four year period. This report will show how to evaluate the effectiveness of brand display and featuring, a common marketing problem, and demonstrate the opportunity of understanding that data. 
+Additionally, it will showcase the comparison of sales forecasting with a multiple regression model vs a neural network.
+
+* Dataset was obtained from *https://www.chicagobooth.edu/research/kilts/datasets/dominicks*
+
+```{r include=FALSE}
+##load the packages that are needed for the project
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(readxl)
+library(ggthemes)
+library(stargazer)
+```
+
+We begin by loading the data set from the excel file **"beer_data_chicago_Dominicks.xlsx"** into the RStudio integrated development environment (IDE). From here we take a quick glimpse at the dataset:
+```{r}
+#Loading the data set
+data <- read_excel("beer_data_chicago_Dominicks.xlsx")
+
+# Printing a sample of columns and the first lines of the data set
+head(data[0:8], 4) %>% 
+  kable(format="html",) %>% 
+  kable_styling(bootstrap_options = c("striped"), font_size = 12, position = "center")
+```
+
+```{r,include=FALSE}
+glimpse(data[1:5])
+```
+
+After reading the documentation we can bring some context to the recollected information about the beer brands. The data is from Dominick’s Finer Foods (DFF), a large midwestern supermarket grocery business with 96 located around the city of Chicago. The data was collected from September 1989 to September 1993 for a total of 265 weeks. For the categories of beer, we have less than 265 weeks of data due to missing observations$^1$. 
+
+Overall, the dataset on which we will conduct our analysis for the modelling and forecasting consists of 227 rows with 20 attributes. The following section details a brief description of the different attributes in the dataset. For additional context, retail and wholesale prices have been appropriately deflated using the Consumer Price Index. Likewise, display and feature have been standardized as the percentage of Stock Keeping Units (SKU's) of the brand that are promoted in a given week$^1$. 
+
+# Dataset variables
+
+The following section is a description of the column variables within the beer dataset:
+
+Category Sales: the sum of sales brand 1, 2, and 3 in each week.
+
+Price Brand #: The price of each beer brand.
+
+Display Brand: this indicates the percentage of SKU that were promoted within the week. This type of promotion happens in-store, usually within the near vicinity of the aisle and normally displays promotion signal next to the product.
+
+Feature Brand: Also indicate the percentage of the SKU that were promoted within the week. Feature attribute differs from display as it consists in external publicity, as in leaflets that are distributed outside the store or through mailbox to customers.
+
+Retail Margin brand: the marginal profit gain of the retail location.
+
+Sales Brand #: unit sales of each individual beer brand.
+
+Wholesale Price #: price charged for a product as sold in bulk per beer brand
+
+## Exploratory Data Analysis
+
+We commence to investigate the data by performing an Exploratory Data Analysis (EDA) to get a quick feeling and understanding of the dataset.
+
+```{r}
+summary(data[1:5], x=3, digits=2) %>% 
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped"), font_size = 12)
+```
+
+We plot the sales values of the three different brands to notice is there is any seasonality or overall trend of sales.
+
+```{r}
+ggplot(data, aes(x=Week)) +
+  geom_line(aes(y= SALESBRAND1, color="Beer 1"))+
+  geom_line(aes(y= SALESBRAND2, color="Beer 2"))+
+  geom_line(aes(y= SALESBRAND3, color="Beer 3"))+
+  ggtitle("Sales of Beer Brands")+
+  ylab("Sales")+
+  theme_minimal()
+```
+
+We can see that the volume of sales for brand 1 and 2 have a certain similarity. Meanwhile, brand 3 has a much lower volume of sales compared to the former ones. Furthermore, there are some spikes in sales that could correspond to seasonality of advertisement campaigns.
+
+```{r, eval=FALSE, include=FALSE}
+ggplot(data)+
+  geom_histogram(aes(PRICEBRAND1), bins = 15, color="steelblue2", fill="")+
+  geom_histogram(aes(PRICEBRAND2), bins = 15, color="orange1", fill="")+
+  geom_histogram(aes(PRICEBRAND3), bins = 15, color="orchid3", fill="")+
+  xlab("Price of Beer")+
+  ylab("Number of weeks in a given price range")+
+  ggtitle("Amount of weeks that three DFF brands priced their beer")+
+  theme_minimal()
+```
+
+```{r}
+ggplot(data)+
+  geom_histogram(aes(PRICEBRAND1, color="Beer 1"), bins = 15, fill="")+
+  geom_histogram(aes(PRICEBRAND2, color="Beer 2"), bins = 15, fill="")+
+  geom_histogram(aes(PRICEBRAND3, color="Beer 3"), bins = 15, fill="")+
+  xlab("Price of Beer")+
+  ylab("Number of weeks in a given price range")+
+  ggtitle("Amount of weeks that three DFF brands priced their beer")+
+  theme_minimal()
+```
+
+From the graph we can see that on average, brand 1 is the most expensive beer, followed by brand 3, and lastly brand 2 is the cheapest brand. This visualization reinforces the information of the mean and median from the summary. Where the average price and median price is 4.8, 4.5, 4.6, for brands 1, 2, and 3 respectively.
+
+```{r}
+# Average value of display promotions for brand 1
+d_1 <- data$display_brand1
+d_2 <- data$display_brand2
+d_3 <- data$display_brand3 
+avg_display_b1 <- d_1 %>% .[.!=0] %>% mean()*100
+avg_display_b2 <- d_2 %>% .[.!=0] %>% mean()*100
+avg_display_b3 <- d_3 %>% .[.!=0] %>% mean()*100
+avg_displays <- c(avg_display_b1, avg_display_b2, avg_display_b3)
+# Number of display promotions for brand 1
+num_disp_b1 <- length(which(d_1 != 0))
+num_disp_b2 <- length(which(d_2 != 0))
+num_disp_b3 <- length(which(d_3 != 0))
+num_displays <- c(num_disp_b1, num_disp_b2, num_disp_b3)
+# Average value of display promotions for each brand
+f_1 <- data$FEATUREBRAND1
+f_2 <- data$FEATUREBRAND2
+f_3 <- data$FEATUREBRAND3
+avg_feature_b1 <- f_1 %>% .[.!=0] %>% mean()*100
+avg_feature_b2 <- f_2 %>% .[.!=0] %>% mean()*100
+avg_feature_b3 <- f_3 %>% .[.!=0] %>% mean()*100
+avg_features <- c(avg_feature_b1, avg_feature_b2, avg_feature_b3)
+# Number of display promotions for each brand
+num_feat_b1 <- length(which(f_1 != 0))
+num_feat_b2 <- length(which(f_2 != 0))
+num_feat_b3 <- length(which(f_3 != 0))
+num_feats <- c(num_feat_b1, num_feat_b2, num_feat_b3)
+
+# Pulling all the EDA calculations together
+brands <- c("Brand 1", "Brand 2", "Brand 3")
+eda_beer <- data.frame(brands, round(avg_displays,2), num_displays, round(avg_features,2), num_feats)
+colnames(eda_beer)[1:5] <- c("Brands","Average Displays %", "Number of Display Weeks", "Average Features %", "Number of Feature Weeks")
+colnames(cars)[1:2] <-c("Speed (mph)","Stopping Distance (ft)")
+eda_beer %>% 
+  kable() %>% kable_styling(bootstrap_options = c("striped"), font_size = 12)
+```
+
+On average, Brand 1 has received the biggest display percentage (18.8%). Brand 2 has received display branding every week of the data set (227), but also the lowest average (11.9%). Brand 3 has received the least amounts of branding weeks (210).
+
+On average Brand 1 has received the biggest feature brand percentage (2.5%). Brand 2 has received the most amount of feature branding weeks (71), but again has the lowest average (0.65%). Brand 3 received the least amounts of feature branding weeks (23), but received more twice as much as the second brand (1.2%).
+
+This quick exploration of the data already shows us that some of these brands have different amount of resources allocation from the marketing budget which can impact the sales of each individual beer.
+
+## SCANPRO
+The $SCAN{*}PRO$ model is often used to model the impact of various portions of the marketing mix. It can be useful in the prediction of sales and to model the effect of each part of the marketing mix. For this report the model will determine the elasticities (E), it is represented as follows:
+
+\[ Sales_{B1} = Constant * (Price_{B1})^{E_{B1}} * (Price_{B2})^{E_{B2}} * (Price_{B3})^{E_{B3}} * (Display_{B1})^{E.Display_{B1}} * (Feature_{B1})^{E.Feature_{B1}} \]
+
+\[ Log(Sales_{B1}) = Constant + {E_{B1}}* Log(Price_{B1}) + {E_{B2}} * Log(Price_{B2}) + {E_{B3}} * Log(Price_{B3}) +\]
+\[E.Display_{B1}*Display_{B1} + E.Feature_{B1}*Feature_{B1} \]
+
+Before we can estimate the linear model, we must first start by taking the log-transforming model variables. In the case of display and feature brand we must add +1 and then take the log to avoid having values of negative infinity. This is due to the weeks where display or feature would have a value of zero, taking the log of zero would cause problems with our analysis.
+
+```{r}
+# We take logarithm of each variable
+data$log_sales_b1 <- log(data$SALESBRAND1) 
+data$log_sales_b2 <- log(data$SALESBRAND2)
+data$log_sales_b3 <- log(data$SALESBRAND3)
+
+data$log_price_b1 <- log(data$PRICEBRAND1)
+data$log_price_b2 <- log(data$PRICEBRAND2)
+data$log_price_b3 <- log(data$PRICEBRAND3)
+
+# We use the +1 trick for this section
+data$log_display_b1 <- log(data$display_brand1 + 1)
+data$log_display_b2 <- log(data$display_brand2 + 1)
+data$log_display_b3 <- log(data$display_brand3 + 1)
+
+data$log_feature_b1 <- log(data$FEATUREBRAND1 + 1)
+data$log_feature_b2 <- log(data$FEATUREBRAND2 + 1)
+data$log_feature_b3 <- log(data$FEATUREBRAND3 + 1)
+```
+
+Now we can estimate the models.
+```{r, results='asis'}
+# Estimating the linear model for brand_1
+scanpro_brand_1 <- lm(log_sales_b1 ~ log_price_b1 + log_price_b2 + log_price_b3 +
+                     log_display_b1 + log_feature_b1, 
+                     data = data)
+scanpro_brand_2 <- lm(log_sales_b2 ~ log_price_b1 + log_price_b2 + log_price_b3 +
+                     log_display_b2 + log_feature_b2, 
+                     data = data)
+scanpro_brand_3 <- lm(log_sales_b3 ~ log_price_b1 + log_price_b2 + log_price_b3 +
+                     log_display_b3 + log_feature_b3, 
+                     data = data)
+stargazer(scanpro_brand_1, scanpro_brand_2, scanpro_brand_3, 
+          type = "html" )
+```
+
+## Analysis
+All analysis were conducted with n = 227 observations. The following section presents a description of the major points of each model and afterwards a description of the implications.
+
+### Brand 1
+The model for brand 1 had the lower $R^2$ value at 0.387. The price elasticity for the brand of beer 1 = -2.444, it is very statistically significant. Likewise, the elasticities of beer 2= -0.444 and beer 3 = -0.790, are statistically significant at the p<0.05 level. 
+
+This model shows that display and feature are two important and statistically significant parameters for brand 1. For displaying the brand, the elasticity of displaying brand 1 = 0.885, and the elasticity of featuring brand 1 = 2.334.
+
+### Brand 2
+The model for brand 2 had the highest $R^2$ value at 0.503, the highest value out all the three brands. The price elasticity for the brand of beer 1 = -2.497, it is very statistically significant. However, the elasticities of beer 1= -0.103 and beer 3 = -0.151, are not statistically significant at the p<0.1 level. 
+
+This model shows that only display branding is a statistically significant parameters for brand 2 = 2.994. For featuring the brand of beer 2, the coefficient is not statistically significant.
+
+### Brand 3
+The model for brand 3 had an $R^2$ value of 0.479 The price elasticity for the brand of beer 1 = -3.894, it is very statistically significant. However, the elasticities of beer 1 was not statistically significant, and of beer 2 = 0.387, it was statistically significant at the p<0.1 level. 
+
+This model is the only that shows that display branding has a negative impact on the sales of beer 3, nevertheless it is not statistically significant. For featuring the brand of beer 3, it also shows a coefficient that is not statistically significant.
+
+## Implications
+
+### Brand 1
+The price elasticity for the brand of beer 1 = -2.444, this implies that a 1 percent increase in price of the product decreases its sales by 2.444 percent. Overall, elasticity with absolute value greater than are considered vulnerable to price change, it should be noted that brand 1 is quite elastic. 
+
+Contrary to the expectation, the values for price elasticity of brand 2 and 3 show that a 1 percent decrease in the competitor's price would result in increase of sales of beer 1. This was unexpected given that brand 1 is the most expensive. It could lead to explore that there is an brand image component associated with this category. 
+
+The elasticity for displaying brand 1 is 0.885. This implies that a 1 percent increase in displaying brand 1 in the SKU that were promoted during the week increases the brand’s sales by 0.885 percent.
+
+Likewise, the elasciticity for featuring brand 1 is 2.334 This implies that a 1 percent increase in displaying brand 1 in the SKU that were promoted during the week increases the brand’s sales by 2.334 percent. As an elasticity greater than one, the factor of feature display has a strong impact on the sales of brand 1.
+
+### Brand 2
+The price elasticity for the brand of beer 2 = -2.497, this implies that a 1 percent increase in price of the product decreases its sales by 2.497 percent. Overall, elasticity with absolute value greater than are considered vulnerable to price change, it should be noted that brand 1 is quite elastic. Brand of beer 1 is showing a similar level of elasticity to brand of beer 1.
+
+The price elasticity of brand 1 and 3 show are not statistically significant, therefore we cannot derive very convincing interpretations about the effectiveness of the change of sales price with respect to beer 2.
+
+The elasticity for displaying brand 1 is 2.994. This implies that a 1 percent increase in displaying brand 1 in the SKU that were promoted during the week increases the brand’s sales by 2.994 percent. This is the highest value of increase change out of the three brands and could indicate that brand 2 benefits the most of display branding.
+
+However, there is a change for the featuring elasticity of brand 2, which is not statistically significant. This implies that we cannot conclude that feature branding, promoting the beer outside of the store, has an impact in increasing the sales of brand 2.
+
+### Brand 3
+The price elasticity for the brand of beer 3 = -3.894, this implies that a 1 percent increase in price of the product decreases its sales by 3.894 percent. Brand of beer 3 is showing the most profound change in elasticity with a price change. This could be due to the beer brand being the cheapest out of the three. As the most economic option, when it raises it price it shows the most impact towards a decrease in sales.
+
+The price elasticity of brand 1 is not statistically significant for beer 3. Beer 2 show some elasticity with 0.387, which indicated that when brand 2 raises prices, beer 3 sees a small boost in sales.
+
+The elasticity for displaying brand 3 is -0.287. This would imply that displaying the brand decrease its sales, which is bizarre. Nevertheless, the coefficient is not statistically significant.
+
+Likewise, for featuring branding of brand 3, which is not statistically significant. This implies that we cannot conclude that either displaying or featuring brand 3 have an impact on the sales of the brand. 
+
+## Multiple Linear Regression
+
+In the following section we compare a multiple linear regression against a neural network to predict the number of sales. To do this we first run a normal regression taking the logarithmic values of the beer prices and the branding aspects of each beer. By applying the 80/20 split on training and testing data we will test the performance of the model.
+
+It's important to note that the variables for wholesale prices were excluded for this part of the analysis. This is due to the lack of contextual information regarding how the whole sale prices function within the chain store. The documentation does not mention the interaction or situation where beers are sold at wholesale price or whether these prices apply at all time. Due to that lack of clarity it was preferred to exclude those variables from the model, because they could not be correctly interpreted without the context.
+
+**Training and Testing Sets**
+
+Since we are using a time series data set, we do not randomize the rows, instead we take the first 80% as our training set and the last 20% we set aside as our test set.
+
+```{r}
+# Defining the training and testing data set using an 80/20 split
+# 227 = 182 for trainning + 45 for testing
+data$log_sales <- log(data$"Category Sales")
+train <-data[1:182,]
+test <-data[183:227,]
+```
+
+We calculate the multiple linear regression model and display the results. Compared to the previous section we are considering that the display and feature of all products have an overall impact on the total amount of sales.
+
+```{r,results='asis'}
+# Performing the multiple linear regresssion
+mlm <- lm(log_sales ~ log_price_b1 + log_price_b2 + log_price_b3 + log_display_b1 + log_feature_b1 + log_display_b2 + log_feature_b2 + log_display_b3 + log_feature_b3, data = data)
+# Printing out th model
+stargazer(mlm,  type = "html")
+```
+
+Now we wish to compare the prediction of the multiple linear regression model against the test set. First, we will use the model to predict against the testing set and we will compare the results to the actual values from the test set. Since the orginal values were taken in log form we will have to transform the values back to get a better reference for the accuracy of the model.
+
+```{r}
+# Using the model on the test set to predict sales
+predicted_sales_lm <- predict(mlm, test)
+# Taking the actual value of sales from the test set
+actual_sales_lm    <- test$log_sales
+
+# Here we take the exponenetial to get back the original numbers and print out the head of the table
+mlm_results <- data.frame(test$Week, exp(predicted_sales_lm), exp(actual_sales_lm)) 
+colnames(mlm_results)[1:3] <- c("Week","Predicted Sales", "Actual Sales")
+mlm_results %>% head() %>%
+  kable() %>% 
+  kable_styling(bootstrap_options = c("striped"), font_size = 12, position = "center")
+```
+
+To evaluate model performance of the model, we compare the predicted value against the actual real value from the test set using the Root Mean Square Error (RMSE).
+
+```{r}
+# Calculating the errors of predictions versus actual data
+rmse.test_lm <- (sum((exp(actual_sales_lm) - exp(predicted_sales_lm))^2)/nrow(test))^0.5
+rmse.test_lm
+```
+
+This value will can be used as a benchmark to compare the performance of a different method for predicting the amount of sales. Now we proceed to apply neural network on the same data and compare the which model has a better prediction.
+
+## Neural Network
+
+```{r, eval=TRUE, include=FALSE}
+# For this section we require importing a new package for computing the calculations of a neural network.
+# **Importing the package**
+library(neuralnet)
+```
+
+**Preparing the data**
+
+Before computing the parameter of the neural network, the data must be scaled before processing. For this data set, the min-max scalar to have a bounded range from 0 to 1. This has the consequence of having lower standard deviations and suppressing the effects of outliers within the data.
+
+```{r}
+# Normalising the data using min and max values
+maxs <- apply(data[2:11], 2, max) 
+mins <- apply(data[2:11], 2, min)
+# Applying the min-max scale to the relevant columns
+scaled <- as.data.frame(scale(data[2:11], center = mins, scale = maxs - mins))
+# Changing the name name of the first column for coding and references
+names(scaled)[1] <- "category_sales"
+# Printing out example of scaled data
+scaled[1:8] %>% head(3) %>% kable() %>% 
+    kable_styling(bootstrap_options = c("striped"), font_size = 12)
+```
+
+**Splitting Training and Testing Sets**
+
+Once again, we split up our data taking a training sample and a test sample. We utilize the same ratio of 80/20 as the previous time.
+
+```{r}
+# Splitting train and test set
+train_nn <- scaled[  1:182,]
+test_nn  <- scaled[183:227,]
+```
+
+
+**Fitting the Neural Network**
+
+The next section increases the complexity of the analysis for several reasons. It can be summarised into two sections, internal part of the analysis and external part. The external section is easier to determine, with little documentation and variable interpretation, and without the context of the people that collected the data, the model can only tell us a minimal amount about the actual applications and effects on weekly sales. 
+
+On the internal part of the analysis, there is a simple yet elaborate decision that requires the selection of the number of hidden layers and neurons on which to train the model. There are some heuristics (2/3 input parameters + output parameter) for determining this process and which were tried out throughout the analysis. For the purpose of this report's brevity and the computational expense of running the required runs, a series of quick trial and error iterations resulted in determining that two hidden layers, one with 10 neurons and the second one with 5 neurons provided the lowest value of RMSE.
+
+```{r}
+nn_sales = neuralnet(formula = category_sales ~ PRICEBRAND1 + PRICEBRAND2 + PRICEBRAND3 + 
+                       display_brand1 + FEATUREBRAND1 + 
+                       display_brand2 + FEATUREBRAND2 + 
+                       display_brand3 + FEATUREBRAND3, 
+               data = train_nn,
+               hidden = c(10,5), 
+               linear.output=FALSE, 
+               err.fct = 'sse')
+summary(nn_sales)
+```
+
+We have two sections for comparing the prediction accuracy of the model. In this first section we compare against the training data to get an overall sense of whether the model would be able to arrive at the same results with which it was trained. The results look slightly promising, so we move unto comparing with the test data.
+
+```{r}
+fitted.train <- nn_sales$net.result[[1]] * (max(data$"Category Sales")-min(data$"Category Sales"))+min(data$"Category Sales")
+
+# Taking original value of sales from the dataset. 
+train.r <- data$"Category Sales"[1:182]
+
+# Calculation of the the Root Mean Squared Error
+rmse.train <- (sum((train.r - fitted.train)^2)/nrow(fitted.train))^0.5
+
+rmse.train
+```
+
+In this section we compare the parameters of the model on the testing data to obtain a prediction of the sales given the values of beer prices, display and feature branding. 
+```{r}
+# Fitting the model using test dataset
+predict.nn <- compute(nn_sales, test_nn)
+
+# Rescaling the predictions
+predict.nn.rescaled <- predict.nn$net.result * (max(data$"Category Sales")-min(data$"Category Sales"))+min(data$"Category Sales")
+
+# Taking original values of test data
+test.r <- data$"Category Sales"[183:227]
+
+# Calculating RMSE
+rmse.test_nn <- (sum((test.r - predict.nn.rescaled)^2)/nrow(test_nn))^0.5
+
+rmse.test_nn
+```
+
+## Analysis
+
+The value of the RMSE from the neural network is higher than the multiple linear regression. This was computed on the testing data for both models and having obtained a higher error in the last section, we can conclude that using neural networks method underperforms using a multiple linear regression method. 
+
+## Implications
+
+It is possible that there exists a relationship between the dependent and independent variables that is non-linear in nature. Likewise, the attempt to model the amount of sales only based on pricing and advertisement lacks a lot of fundamental information, nevertheless it is still a worthwhile task to determine which factors can give us a reasonable prediction on sales. The objective of this section can demonstrate that in some occasions having a simpler model can benefit the overall perform a business.
+
+Using a multiple linear regression model is a well-tested and robust method that can give results that can be interpreted. Even if the neural network had managed to correctly predict the amount of sales better than the regression model, if would be hard to explain the interpretation of the network or the overall effect of each marketing mix of the beer brands. Likewise, excluding the information of wholesale price might have impacted the ability of the model to predict the sales outcome. 
+
+## Conclusion
+
+The report showed how to do some exploratory data analysis, apply the SCANPRO method, and use a neural for forecasting the sales of beer in a chain store. It contrasted how to evaluate the effectiveness of brand display and featuring. We contrasted the advantages and disadvantages of each beer brand, Brand 1 has a significant effect from both display and featuring, Brand 2 has the highest impact from display marketing, and Brand 3 is the most affected in elasticity if it raises its prices. 
+
+Additionally, we showed the comparison of sales forecasting with a multiple regression model versus a neural network. Predicting sales is a complex task, the fact that the multiple linear regression model outperformed the neural network is understandable given that it is a simpler model and not as much time was dedicated to fine tuning the hyperparameters of the network.
+
+There are a couple of instances to comment on about the procedure of the modelling. For one, there is no clear context about the data and the types of promotions and advertisements being used. There was a lack of clarity as to which prices were more important for the sales of beer, either price brand or wholesale price. The dataset did not mention whether these were the only three types of beer available or there existed other options for consumers to purchase. Clarification of these questions could lead to various improvements on the current models.
+
+## References
+1. Srinivasan, S., Pauwels, K., Hanssens, D. M., & Dekimpe, M. G. (2004). Do Promotions Benefit Manufacturers, Retailers, or Both? _Management Science_, 50(5), 617–629. doi: 10.1287/mnsc.1040.0225
+
